@@ -38,8 +38,16 @@
     // Delay between retries (ms).
     const RETRY_DELAY_MS = 1500;
 
-    // Delay between API requests (ms).
+    // Minimum gap between any two Procare API requests (ms).
     const API_DELAY_MS = 1000;
+
+    // Minimum gap between Procare photo API requests (ms).
+    // Used instead of API_DELAY_MS for the month-by-month photo scan.
+    const PHOTO_API_DELAY_MS = 1500;
+
+    // Stop the photo scan after this many consecutive months with no
+    // photos (scanning newest to oldest, once photos have been found).
+    const EMPTY_MONTHS_TO_STOP = 6;
 
     // Delay between file downloads (ms).
     const DOWNLOAD_DELAY_MS = 1500;
@@ -263,18 +271,45 @@
     // FETCH WITH RETRIES
     // ============================================================
 
-    async function fetchWithRetry(url, options = {}, label = "request") {
+    // Time the last throttled Procare API request started.
+    let lastApiRequestAt = 0;
+
+    // Wait until at least minGapMs has passed since the previous
+    // throttled API request, then mark this one as started.
+    async function throttleApi(minGapMs) {
+        const wait = lastApiRequestAt + minGapMs - Date.now();
+        if (wait > 0) {
+            await sleep(wait);
+        }
+        lastApiRequestAt = Date.now();
+    }
+
+    // apiDelayMs: if set, every attempt (including retries) is throttled
+    // to at least that gap since the previous Procare API request.
+    // Leave null for non-API requests such as file downloads.
+    async function fetchWithRetry(
+        url,
+        options = {},
+        label = "request",
+        apiDelayMs = null
+    ) {
         let lastError = null;
 
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            let retryable = true;
+
             try {
+                if (apiDelayMs !== null) {
+                    await throttleApi(apiDelayMs);
+                }
+
                 const response = await fetch(url, options);
 
                 if (response.ok) {
                     return response;
                 }
 
-                // These statuses are usually not worth retrying.
+                // These statuses are not worth retrying.
                 if (
                     response.status === 400 ||
                     response.status === 401 ||
@@ -283,25 +318,30 @@
                     response.status === 422
                 ) {
                     const errorText = await response.text().catch(() => "");
-                    throw new Error(
+                    lastError = new Error(
                         `${label} failed with HTTP ${response.status}: ${errorText}`
                     );
+                    retryable = false;
+                } else {
+                    lastError = new Error(
+                        `${label} failed with HTTP ${response.status}`
+                    );
                 }
-
-                lastError = new Error(
-                    `${label} failed with HTTP ${response.status}`
-                );
             } catch (error) {
                 lastError = error;
+            }
 
-                if (attempt < MAX_RETRIES) {
-                    console.warn(
-                        `⚠️ ${label} failed (attempt ${attempt}/${MAX_RETRIES}). ` +
-                            `Retrying in ${RETRY_DELAY_MS}ms...`,
-                        error
-                    );
-                    await sleep(RETRY_DELAY_MS);
-                }
+            if (!retryable) {
+                break;
+            }
+
+            if (attempt < MAX_RETRIES) {
+                console.warn(
+                    `⚠️ ${label} failed (attempt ${attempt}/${MAX_RETRIES}). ` +
+                        `Retrying in ${RETRY_DELAY_MS}ms...`,
+                    lastError
+                );
+                await sleep(RETRY_DELAY_MS);
             }
         }
 
@@ -312,7 +352,13 @@
     // PAGINATED API FETCH
     // ============================================================
 
-    async function fetchAllPages(endpoint, kidId, label, queryExtras = "") {
+    async function fetchAllPages(
+        endpoint,
+        kidId,
+        label,
+        queryExtras = "",
+        apiDelayMs = API_DELAY_MS
+    ) {
         let page = 1;
         const allItems = [];
 
@@ -335,7 +381,8 @@
                 response = await fetchWithRetry(
                     url,
                     { headers },
-                    `${label} page ${page}`
+                    `${label} page ${page}`,
+                    apiDelayMs
                 );
             } catch (error) {
                 console.error(`❌ Giving up on ${label} page ${page}.`, error);
@@ -395,7 +442,6 @@
 
             if (Number.isFinite(nextPage) && nextPage > page) {
                 page = nextPage;
-                await sleep(API_DELAY_MS);
             } else {
                 break;
             }
@@ -415,7 +461,8 @@
         kidsResponse = await fetchWithRetry(
             "https://api-school.procareconnect.com/api/web/parent/kids",
             { headers },
-            "children request"
+            "children request",
+            API_DELAY_MS
         );
     } catch (error) {
         console.error("❌ Failed to fetch children.", error);
@@ -677,19 +724,23 @@
                 "/parent/photos/",
                 kidId,
                 "photos",
-                query
+                query,
+                PHOTO_API_DELAY_MS
             );
         } else {
             const now = new Date();
             const currentYear = now.getFullYear();
             const currentMonth = now.getMonth() + 1;
 
-            for (let year = START_YEAR; year <= currentYear; year++) {
-                for (let month = 1; month <= 12; month++) {
-                    if (year === currentYear && month > currentMonth) {
-                        break;
-                    }
+            // Scan newest to oldest so we can stop once we run past
+            // the earliest month that has photos.
+            let foundPhotos = false;
+            let emptyStreak = 0;
 
+            scan: for (let year = currentYear; year >= START_YEAR; year--) {
+                const lastMonth = year === currentYear ? currentMonth : 12;
+
+                for (let month = lastMonth; month >= 1; month--) {
                     const range = getMonthDateRange(year, month);
 
                     const query =
@@ -706,13 +757,26 @@
                         "/parent/photos/",
                         kidId,
                         "photos",
-                        query
+                        query,
+                        PHOTO_API_DELAY_MS
                     );
 
                     photos.push(...monthPhotos);
 
                     if (monthPhotos.length > 0) {
-                        await sleep(500);
+                        foundPhotos = true;
+                        emptyStreak = 0;
+                    } else if (foundPhotos) {
+                        emptyStreak++;
+
+                        if (emptyStreak >= EMPTY_MONTHS_TO_STOP) {
+                            console.log(
+                                `🛑 ${EMPTY_MONTHS_TO_STOP} months in a row ` +
+                                    `with no photos. Stopping photo scan ` +
+                                    `at ${range.from}.`
+                            );
+                            break scan;
+                        }
                     }
                 }
             }
