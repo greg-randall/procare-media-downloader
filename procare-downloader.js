@@ -37,11 +37,11 @@
 
     // Minimum gap between any two requests (ms). Applies to every attempt,
     // including retries.
-    const API_DELAY_MS = 1000;
+    const API_DELAY_MS = 1250;
 
     // Minimum gap for photo requests (ms): the month-by-month photo scan
     // and the photo/video file downloads.
-    const PHOTO_DELAY_MS = 1500;
+    const PHOTO_DELAY_MS = 1750;
 
     // How long to wait before retrying after an HTTP 429 (ms).
     const RATE_LIMIT_DELAY_MS = 60000;
