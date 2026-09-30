@@ -56,6 +56,10 @@ Add 1.25 seconds for every 30 daily activities on the account. The console shows
 - The first response from each endpoint logs a `🔬` line showing its top-level fields, which helps if Procare changes the format.
 - Your browser may ask to allow multiple downloads the first time.
 
+## Procare API notes
+
+[README-PROCARE-API.md](README-PROCARE-API.md) documents the internal Procare web API the script uses: where the auth token lives, the endpoints for children, photos, videos and daily activities, date filters, pagination, and media URL handling. It is reverse engineered from the web app, not official documentation, so details may change and some are marked there as unverified.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
