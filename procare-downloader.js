@@ -35,22 +35,20 @@
     // Number of times to retry failed API/file requests.
     const MAX_RETRIES = 3;
 
-    // Delay between retries (ms).
-    const RETRY_DELAY_MS = 1500;
-
-    // Minimum gap between any two Procare API requests (ms).
+    // Minimum gap between any two requests (ms). Applies to every attempt,
+    // including retries.
     const API_DELAY_MS = 1000;
 
-    // Minimum gap between Procare photo API requests (ms).
-    // Used instead of API_DELAY_MS for the month-by-month photo scan.
-    const PHOTO_API_DELAY_MS = 1500;
+    // Minimum gap for photo requests (ms): the month-by-month photo scan
+    // and the photo/video file downloads.
+    const PHOTO_DELAY_MS = 1500;
+
+    // How long to wait before retrying after an HTTP 429 (ms).
+    const RATE_LIMIT_DELAY_MS = 60000;
 
     // Stop the photo scan after this many consecutive months with no
     // photos (scanning newest to oldest, once photos have been found).
     const EMPTY_MONTHS_TO_STOP = 6;
-
-    // Delay between file downloads (ms).
-    const DOWNLOAD_DELAY_MS = 1500;
 
     // ============================================================
     // STARTUP
@@ -271,37 +269,35 @@
     // FETCH WITH RETRIES
     // ============================================================
 
-    // Time the last throttled Procare API request started.
-    let lastApiRequestAt = 0;
+    // Time the last request started.
+    let lastRequestAt = 0;
 
     // Wait until at least minGapMs has passed since the previous
-    // throttled API request, then mark this one as started.
-    async function throttleApi(minGapMs) {
-        const wait = lastApiRequestAt + minGapMs - Date.now();
+    // request, then mark this one as started.
+    async function throttle(minGapMs) {
+        const wait = lastRequestAt + minGapMs - Date.now();
         if (wait > 0) {
             await sleep(wait);
         }
-        lastApiRequestAt = Date.now();
+        lastRequestAt = Date.now();
     }
 
-    // apiDelayMs: if set, every attempt (including retries) is throttled
-    // to at least that gap since the previous Procare API request.
-    // Leave null for non-API requests such as file downloads.
+    // delayMs: minimum gap since the previous request, enforced before
+    // every attempt (including retries).
     async function fetchWithRetry(
         url,
         options = {},
         label = "request",
-        apiDelayMs = null
+        delayMs = API_DELAY_MS
     ) {
         let lastError = null;
 
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             let retryable = true;
+            let rateLimited = false;
 
             try {
-                if (apiDelayMs !== null) {
-                    await throttleApi(apiDelayMs);
-                }
+                await throttle(delayMs);
 
                 const response = await fetch(url, options);
 
@@ -326,6 +322,10 @@
                     lastError = new Error(
                         `${label} failed with HTTP ${response.status}`
                     );
+
+                    if (response.status === 429) {
+                        rateLimited = true;
+                    }
                 }
             } catch (error) {
                 lastError = error;
@@ -336,12 +336,18 @@
             }
 
             if (attempt < MAX_RETRIES) {
+                // Other failures just retry; throttle() enforces the gap.
                 console.warn(
                     `⚠️ ${label} failed (attempt ${attempt}/${MAX_RETRIES}). ` +
-                        `Retrying in ${RETRY_DELAY_MS}ms...`,
+                        (rateLimited
+                            ? `Rate limited, waiting ${RATE_LIMIT_DELAY_MS}ms...`
+                            : "Retrying..."),
                     lastError
                 );
-                await sleep(RETRY_DELAY_MS);
+
+                if (rateLimited) {
+                    await sleep(RATE_LIMIT_DELAY_MS);
+                }
             }
         }
 
@@ -357,7 +363,7 @@
         kidId,
         label,
         queryExtras = "",
-        apiDelayMs = API_DELAY_MS
+        delayMs = API_DELAY_MS
     ) {
         let page = 1;
         const allItems = [];
@@ -382,7 +388,7 @@
                     url,
                     { headers },
                     `${label} page ${page}`,
-                    apiDelayMs
+                    delayMs
                 );
             } catch (error) {
                 console.error(`❌ Giving up on ${label} page ${page}.`, error);
@@ -461,8 +467,7 @@
         kidsResponse = await fetchWithRetry(
             "https://api-school.procareconnect.com/api/web/parent/kids",
             { headers },
-            "children request",
-            API_DELAY_MS
+            "children request"
         );
     } catch (error) {
         console.error("❌ Failed to fetch children.", error);
@@ -583,7 +588,8 @@
         const response = await fetchWithRetry(
             url,
             {},
-            `download ${filename}`
+            `download ${filename}`,
+            PHOTO_DELAY_MS
         );
         return await response.blob();
     }
@@ -658,11 +664,6 @@
                 failed++;
                 console.error(`❌ Failed to download ${filename}.`, error);
             }
-
-            // Don't hammer the browser or Procare.
-            if (i < mediaList.length - 1) {
-                await sleep(DOWNLOAD_DELAY_MS);
-            }
         }
 
         console.log(
@@ -725,7 +726,7 @@
                 kidId,
                 "photos",
                 query,
-                PHOTO_API_DELAY_MS
+                PHOTO_DELAY_MS
             );
         } else {
             const now = new Date();
@@ -758,7 +759,7 @@
                         kidId,
                         "photos",
                         query,
-                        PHOTO_API_DELAY_MS
+                        PHOTO_DELAY_MS
                     );
 
                     photos.push(...monthPhotos);
