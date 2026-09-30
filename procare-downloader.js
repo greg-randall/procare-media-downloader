@@ -491,8 +491,16 @@
                 } else {
                     break;
                 }
+            } else if (
+                data &&
+                typeof data.total === "number" &&
+                allItems.length >= data.total
+            ) {
+                // The response reports a total and we have collected it
+                // all, so there is no need to request an empty last page.
+                break;
             } else if (newItemCount > 0) {
-                // The response has no next_page field, so we can't tell
+                // No next_page and no usable total, so we can't tell
                 // whether this was the last page. Keep asking until a page
                 // comes back empty or repeats items we already have.
                 page++;
