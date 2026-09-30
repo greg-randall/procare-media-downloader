@@ -358,6 +358,9 @@
     // PAGINATED API FETCH
     // ============================================================
 
+    // Endpoint labels whose response shape has already been logged.
+    const loggedShapeFor = new Set();
+
     async function fetchAllPages(
         endpoint,
         kidId,
@@ -367,6 +370,7 @@
     ) {
         let page = 1;
         const allItems = [];
+        const seenItemKeys = new Set();
 
         while (true) {
             let url =
@@ -428,26 +432,70 @@
                 break;
             }
 
+            // Log the response shape once per endpoint so the real
+            // pagination fields are visible.
+            if (!loggedShapeFor.has(label)) {
+                loggedShapeFor.add(label);
+
+                const shape = {};
+                for (const [key, value] of Object.entries(data)) {
+                    shape[key] = Array.isArray(value)
+                        ? `array(${value.length})`
+                        : value;
+                }
+
+                console.log(
+                    `🔬 ${label} response shape (page ${page}):`,
+                    shape
+                );
+            }
+
+            // Track which items are new, so a server that ignores the
+            // page parameter cannot loop us forever.
+            let newItemCount = 0;
+            for (const item of items) {
+                const key =
+                    item && item.id !== undefined && item.id !== null
+                        ? String(item.id)
+                        : JSON.stringify(item);
+
+                if (!seenItemKeys.has(key)) {
+                    seenItemKeys.add(key);
+                    newItemCount++;
+                }
+            }
+
             if (items.length === 0) {
                 console.log(`ℹ️ No items found on ${label} page ${page}.`);
             } else {
                 console.log(
-                    `✅ Found ${items.length} items on ${label} page ${page}.`
+                    `✅ Found ${items.length} items on ${label} page ${page} ` +
+                        `(${newItemCount} new).`
                 );
                 allItems.push(...items);
             }
 
             // Pagination
-            let nextPage = null;
+            const meta = data && data.meta ? data.meta : null;
+            const hasExplicitPagination =
+                !Array.isArray(data) &&
+                ("next_page" in data || (meta && "next_page" in meta));
 
-            if (data && data.next_page) {
-                nextPage = Number(data.next_page);
-            } else if (data && data.meta && data.meta.next_page) {
-                nextPage = Number(data.meta.next_page);
-            }
+            if (hasExplicitPagination) {
+                const rawNext =
+                    data.next_page || (meta ? meta.next_page : null);
+                const nextPage = rawNext ? Number(rawNext) : null;
 
-            if (Number.isFinite(nextPage) && nextPage > page) {
-                page = nextPage;
+                if (Number.isFinite(nextPage) && nextPage > page) {
+                    page = nextPage;
+                } else {
+                    break;
+                }
+            } else if (newItemCount > 0) {
+                // The response has no next_page field, so we can't tell
+                // whether this was the last page. Keep asking until a page
+                // comes back empty or repeats items we already have.
+                page++;
             } else {
                 break;
             }
