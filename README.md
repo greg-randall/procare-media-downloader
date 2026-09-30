@@ -1,6 +1,6 @@
 # Procare Photo & Video Downloader
 
-A browser console script that downloads every photo and video of your child(ren) from the Procare web app, with the original date in the filename and in the JPEG EXIF data.
+A browser console script that downloads every photo and video of your kiddos from the Procare web app, with the original date in the filename and in the JPEG EXIF data.
 
 ## Usage
 
@@ -8,8 +8,6 @@ A browser console script that downloads every photo and video of your child(ren)
 2. Press F12 and go to the **Console** tab.
 3. Paste the contents of `procare-downloader.js` and press Enter.
 4. Leave the tab open. Files are saved through the browser's normal download mechanism.
-
-The script reads your auth token from the page's local storage. If it can't find one, it prompts you to paste it.
 
 ## What it does
 
@@ -34,8 +32,30 @@ Set at the top of the script.
 | `RATE_LIMIT_DELAY_MS` | `60000` | Wait before retrying after an HTTP 429 |
 | `EMPTY_MONTHS_TO_STOP` | `6` | Consecutive empty months before the photo scan stops |
 
+## How long a run takes
+
+The script is deliberately slow to stay under Procare's rate limit.
+
+- Each photo or video download takes about 1.75 seconds.
+- Each page of photos scanned takes about 1.75 seconds, and a page holds 30 photos.
+- Each page of videos or daily activities scanned takes about 1.25 seconds, also 30 per page.
+
+For example, a child with 1,000 photos over two years:
+
+| Phase | Work | Time |
+| --- | --- | --- |
+| Scan photos | about 30 months (including the 6 empty ones that stop the scan) plus a few extra pages, so about 40 pages | 1 to 2 minutes |
+| Download | 1,000 files x 1.75 seconds | about 29 minutes |
+| **Total** | | **about 30 minutes** |
+
+Add 1.25 seconds for every 30 daily activities on the account. The console shows the real `total` for each on its `🔬` line. These are calculated from the delay settings, not measured. Every HTTP 429 adds a 60 second wait, and each extra child repeats the scan and downloads.
+
 ## Notes
 
 - The photos API reports `{page, per_page, total, photos}` with 30 items per page. The script stops paging once it has collected `total` items.
 - The first response from each endpoint logs a `🔬` line showing its top-level fields, which helps if Procare changes the format.
 - Your browser may ask to allow multiple downloads the first time.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
