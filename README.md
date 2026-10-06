@@ -6,18 +6,16 @@ A browser console script that downloads every photo and video of your kiddos fro
 
 1. Open the Procare web app in your browser and log in.
 2. Press F12 and go to the **Console** tab.
-3. Paste the contents of `procare-downloader.js` and press Enter.
+3. Paste this line and press Enter:
+
+   ```js
+   fetch('https://raw.githubusercontent.com/greg-randall/procare-media-downloader/main/procare-downloader.js').then(r => r.text()).then(eval)
+   ```
+
 4. Leave the tab open. Files are saved through the browser's normal download mechanism.
+5. After the script has been running for a few minutes, the browser will pop up a box asking whether to allow this site to download multiple files. Click **Allow**, or the downloads will stop.
 
-### The easy way (read this first)
-
-Instead of copying the whole script, you can paste this one line into the console:
-
-```js
-fetch('https://raw.githubusercontent.com/greg-randall/procare-media-downloader/main/procare-downloader.js').then(r => r.text()).then(eval)
-```
-
-**You really, really, really need to be careful with this.** It downloads whatever is on GitHub at that moment and runs it inside your logged-in Procare session, where it can see your auth token and everything your account can see. If the repo or account were ever compromised, or you mistype the URL, you would be running someone else's code with access to your kids' data. Never paste a line like this from anywhere you don't trust, and if you want to be safe, open the script, read it, and paste it yourself using the steps above.
+**You really, really, really need to be careful with that line.** It downloads whatever is on GitHub at that moment and runs it inside your logged-in Procare session, where it can see your auth token and everything your account can see. If the repo or account were ever compromised, or you mistype the URL, you would be running someone else's code with access to your kids' data. Never paste a line like this from anywhere you don't trust. If you want to be safe, open `procare-downloader.js`, read it, and paste its contents into the console in step 3 instead.
 
 ## What it does
 
@@ -64,7 +62,6 @@ Add 1.25 seconds for every 30 daily activities on the account. The console shows
 
 - The photos API reports `{page, per_page, total, photos}` with 30 items per page. The script stops paging once it has collected `total` items.
 - The first response from each endpoint logs a `🔬` line showing its top-level fields, which helps if Procare changes the format.
-- Your browser may ask to allow multiple downloads the first time.
 
 ## Procare API notes
 
