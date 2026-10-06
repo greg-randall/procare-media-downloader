@@ -4,13 +4,15 @@ A browser console script that downloads every photo and video of your kiddos fro
 
 ## Usage
 
-1. Open the Procare web app in your browser and log in.
+1. Open the Procare website in your browser and log in.
 2. Press F12 and go to the **Console** tab.
 3. Paste this line and press Enter:
 
    ```js
    fetch('https://raw.githubusercontent.com/greg-randall/procare-media-downloader/main/procare-downloader.js').then(r => r.text()).then(eval)
    ```
+
+   The first time you paste into the console, the browser blocks it and asks you to type `allow pasting` and press Enter. Do that, then paste the line again.
 
 4. Leave the tab open. Files are saved through the browser's normal download mechanism.
 5. After the script has been running for a few minutes, the browser will pop up a box asking whether to allow this site to download multiple files. Click **Allow**, or the downloads will stop.
