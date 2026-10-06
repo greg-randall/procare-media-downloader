@@ -9,6 +9,16 @@ A browser console script that downloads every photo and video of your kiddos fro
 3. Paste the contents of `procare-downloader.js` and press Enter.
 4. Leave the tab open. Files are saved through the browser's normal download mechanism.
 
+### The easy way (read this first)
+
+Instead of copying the whole script, you can paste this one line into the console:
+
+```js
+fetch('https://raw.githubusercontent.com/greg-randall/procare-media-downloader/main/procare-downloader.js').then(r => r.text()).then(eval)
+```
+
+**You really, really, really need to be careful with this.** It downloads whatever is on GitHub at that moment and runs it inside your logged-in Procare session, where it can see your auth token and everything your account can see. If the repo or account were ever compromised, or you mistype the URL, you would be running someone else's code with access to your kids' data. Never paste a line like this from anywhere you don't trust, and if you want to be safe, open the script, read it, and paste it yourself using the steps above.
+
 ## What it does
 
 - Finds your children, then collects photos, videos and media attached to daily activities.
